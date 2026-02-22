@@ -255,4 +255,64 @@
             final-sentiment: sentiment
         }))))
 
+;; Analyze Auction Performance (New Feature: 25+ lines)
+;; This function provides a detailed post-mortem analysis of an auction.
+;; It calculates various potential metrics that an AI oracle could use
+;; to adjust future sentiment scores. It aggregates data from the auction params,
+;; final bid, history, and current sentiment to produce a "performance report".
+(define-read-only (analyze-auction-performance (auction-id uint))
+    (let (
+        (auction (unwrap! (map-get? auctions auction-id) ERR-AUCTION-NOT-FOUND))
+        (bid-info (map-get? bids auction-id))
+        (history (unwrap! (map-get? bid-history auction-id) ERR-AUCTION-NOT-FOUND))
+        (sentiment (default-to u50 (map-get? market-sentiment (get collection-id auction))))
+        
+        ;; Calculated Metrics
+        (final-price (default-to u0 (get amount bid-info)))
+        (price-delta (if (> final-price (get base-price auction))
+                         (- final-price (get base-price auction))
+                         u0))
+        (duration-blocks (- (get end-block auction) (get start-block auction)))
+        (bids-per-100-blocks (/ (* (get total-bids history) u100) duration-blocks))
+        
+        ;; Performance classification
+        (performance-rating 
+            (if (and (> price-delta u0) (> bids-per-100-blocks u5))
+                "HOT"
+                (if (> price-delta u0)
+                    "STEADY"
+                    (if (is-some bid-info) "WEAK" "FAILED"))))
+                    
+        ;; AI Feedback Score (Hypothetical future input)
+        (ai-feedback-score 
+             (+ 
+                (/ sentiment u2) ;; 50% weight on sentiment
+                (/ (* bids-per-100-blocks u5) u2) ;; Weight on activity
+             ))
+    )
+    (ok {
+        auction-id: auction-id,
+        category: (get category auction),
+        final-result: {
+            sold: (is-some bid-info),
+            price: final-price,
+            delta-from-reserve: price-delta
+        },
+        engagement-metrics: {
+            total-bids: (get total-bids history),
+            velocity: bids-per-100-blocks,
+            last-bid-block: (get last-bid-block history)
+        },
+        market-context: {
+            sentiment-at-close: sentiment,
+            implied-performance: performance-rating,
+            projected-ai-score: ai-feedback-score
+        },
+        recommendation: (if (is-eq performance-rating "HOT") 
+                            "INCREASE_SENTIMENT" 
+                            (if (is-eq performance-rating "FAILED") 
+                                "DECREASE_SENTIMENT" 
+                                "MAINTAIN"))
+    })))
+
 
